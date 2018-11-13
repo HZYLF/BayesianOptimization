@@ -1,8 +1,10 @@
 import sys
 sys.path.append("./")
 import time
+import random
+
 from bayes_opt import BayesianOptimization
-from bayes_opt.util import UtilityFunction
+from bayes_opt.util import UtilityFunction, Colours
 
 import asyncio
 import threading
@@ -27,7 +29,7 @@ def black_box_function(x, y):
     purposes think of the internals of this function, i.e.: the process
     which generates its outputs values, as unknown.
     """
-    time.sleep(1)
+    time.sleep(random.randint(1, 5))
     return -x ** 2 - (y - 1) ** 2 + 1
 
 
@@ -43,16 +45,17 @@ class BayesianOptimizationHandler(RequestHandler):
         """Deal with incoming requests."""
         body = tornado.escape.json_decode(self.request.body)
 
-        if body:
-            self._bo.probe(body["params"], lazy=False)
+        try:
+            self._bo.register(
+                x=body["params"],
+                target=body["target"],
+            )
+        except KeyError:
+            pass
+        finally:
+            suggested_params = self._bo.suggest(self._uf)
 
-        suggested_params = self._bo.suggest(self._uf)
-
-        output = {
-            "target": self._bo.res[-1]["target"] if self._bo.res else None,
-            "suggested_params": suggested_params,
-        }
-        self.write(json.dumps(output))
+        self.write(json.dumps(suggested_params))
 
 
 def run_optimization_app():
@@ -68,38 +71,45 @@ def run_optimization_app():
 
 
 def run_optimizer():
-    x = {}
-    global optimizers_names
-    name = optimizers_names.pop()
+    global optimizers_config
+    config = optimizers_config.pop()
+    name = config["name"]
+    colour = config["colour"]
 
+    register_data = {}
     max_target = None
-
     for _ in range(10):
-        status = name + " wants to probe: {}.\n".format(x)
+        status = name + " wants to register: {}.\n".format(register_data)
 
         resp = requests.post(
             url="http://localhost:9009/bayesian_optimization",
-            json=x
+            json=register_data,
         ).json()
-        x = {"params": resp["suggested_params"]}
+        target = black_box_function(**resp)
 
-        if max_target is None or resp["target"] > max_target:
-            max_target = resp["target"]
+        register_data = {
+            "params": resp,
+            "target": target,
+        }
 
-        status += name + " got {} as target.\n".format(resp["target"])
-        status += name + " will to probe next: {}.\n".format(x)
-        print(status, end="\n")
+        if max_target is None or target > max_target:
+            max_target = target
+
+        status += name + " got {} as target.\n".format(target)
+        status += name + " will to register next: {}.\n".format(register_data)
+        print(colour(status), end="\n")
 
     global results
     results.append((name, max_target))
+    print(colour(name + " is done!"), end="\n\n")
 
 
 if __name__ == "__main__":
     ioloop = tornado.ioloop.IOLoop.instance()
-    optimizers_names = [
-        "optimizer 1",
-        "optimizer 2",
-        "optimizer 3",
+    optimizers_config = [
+        {"name": "optimizer 1", "colour": Colours.red},
+        {"name": "optimizer 2", "colour": Colours.green},
+        {"name": "optimizer 3", "colour": Colours.blue},
     ]
 
     app_thread = threading.Thread(target=run_optimization_app)
