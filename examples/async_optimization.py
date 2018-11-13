@@ -29,7 +29,7 @@ def black_box_function(x, y):
     purposes think of the internals of this function, i.e.: the process
     which generates its outputs values, as unknown.
     """
-    time.sleep(random.randint(1, 5))
+    time.sleep(random.randint(1, 7))
     return -x ** 2 - (y - 1) ** 2 + 1
 
 
@@ -50,6 +50,7 @@ class BayesianOptimizationHandler(RequestHandler):
                 x=body["params"],
                 target=body["target"],
             )
+            print("BO has registered: {} points.".format(len(self._bo.space)), end="\n\n")
         except KeyError:
             pass
         finally:
